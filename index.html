@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Maze Adventure</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #ffffff;
+            font-family: 'Fredoka', sans-serif;
+            /* Playful font */
+            user-select: none;
+        }
+
+        #ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 12px;
+            height: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .overlay {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 40px 60px;
+            border-radius: 30px;
+            border: 4px solid #4DBD33;
+            text-align: center;
+            pointer-events: auto;
+            color: #333;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin: 0 0 10px 0;
+            color: #4DBD33;
+            font-weight: 600;
+        }
+
+        p {
+            font-size: 1.3rem;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .controls-info {
+            display: inline-block;
+            text-align: left;
+            margin-bottom: 30px;
+            background: #f0f0f0;
+            padding: 20px;
+            border-radius: 15px;
+        }
+
+        .key {
+            display: inline-block;
+            background: #fff;
+            padding: 5px 10px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-weight: bold;
+            color: #333;
+            border: 2px solid #ddd;
+            box-shadow: 0 2px 0 #ccc;
+            margin: 0 2px;
+        }
+
+        button {
+            background: #4DBD33;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            color: white;
+            border-radius: 50px;
+            cursor: pointer;
+            font-family: 'Fredoka', sans-serif;
+            box-shadow: 0 5px 0 #3a9624;
+            transition: transform 0.1s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #3a9624;
+        }
+
+        #minimap-label {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #333;
+            font-size: 16px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 5px 10px;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+    <!-- Import Maps Polyfill -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+</head>
+
+<body>
+    <div id="crosshair"></div>
+    <div id="minimap-label">Map</div>
+
+    <div id="ui-container">
+        <div id="start-screen" class="overlay">
+            <h1>MAZE ADVENTURE</h1>
+            <p>Help the Dragon find the Castle!</p>
+            <div class="controls-info">
+                <div><span class="key">W</span><span class="key">A</span><span class="key">S</span><span
+                        class="key">D</span> to Move</div>
+                <div style="margin-top:10px"><span class="key">Mouse</span> to Look</div>
+            </div>
+            <br>
+            <button id="start-btn">PLAY</button>
+        </div>
+
+        <div id="win-screen" class="overlay hidden">
+            <h1>YOU MADE IT!</h1>
+            <p>Welcome to the Castle!</p>
+            <button id="restart-btn">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <!-- Main Logic -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+        // --- Configuration ---
+        const MAZE_SIZE = 15; // Odd number preferably
+        const MAZE_SCALE = 10;
+        const WALL_HEIGHT = 12; // Slightly shorter for cartoon feel
+        const MOVEMENT_SPEED = 50.0;
+        const PLAYER_HEIGHT = 4.0;
+        const PLAYER_RADIUS = 2.0;
+
+        // --- State ---
+        let camera, scene, renderer;
+        let controls;
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        let playerVelocity = new THREE.Vector3();
+        let prevTime = performance.now();
+
+        let mapCamera;
+        let mazeGrid = [];
+        let endPos = new THREE.Vector2();
+        let gameActive = false;
+
+        // --- Initialization ---
+        init();
+        animate();
+
+        function init() {
+            // 1. Scene Setup - Bright and Friendly
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xFFFFFF); // White background
+            // Add subtle fog for depth but very light
+            scene.fog = new THREE.Fog(0xFFFFFF, 20, 150);
+
+            // 2. Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            // 3. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // 4. Lights - Bright Daylight
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(50, 100, 50);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 500;
+            // Ensure shadow covers maze
+            const d = 100;
+            dirLight.shadow.camera.left = -d;
+            dirLight.shadow.camera.right = d;
+            dirLight.shadow.camera.top = d;
+            dirLight.shadow.camera.bottom = -d;
+            scene.add(dirLight);
+
+            // 5. Controls
+            controls = new PointerLockControls(camera, document.body);
+
+            const startBtn = document.getElementById('start-btn');
+            const restartBtn = document.getElementById('restart-btn');
+            const startScreen = document.getElementById('start-screen');
+            const winScreen = document.getElementById('win-screen');
+
+            startBtn.addEventListener('click', () => controls.lock());
+            restartBtn.addEventListener('click', () => {
+                resetGame();
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', () => {
+                startScreen.classList.add('hidden');
+                winScreen.classList.add('hidden');
+                gameActive = true;
+            });
+
+            controls.addEventListener('unlock', () => {
+                if (gameActive) {
+                    startScreen.classList.remove('hidden');
+                    startBtn.innerText = "RESUME";
+                }
+            });
+
+            scene.add(controls.getObject());
+
+            // 6. Inputs
+            const onKeyDown = (event) => {
+                switch (event.code) {
+                    case 'ArrowUp': case 'KeyW': moveForward = true; break;
+                    case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
+                    case 'ArrowDown': case 'KeyS': moveBackward = true; break;
+                    case 'ArrowRight': case 'KeyD': moveRight = true; break;
+                }
+            };
+
+            const onKeyUp = (event) => {
+                switch (event.code) {
+                    case 'ArrowUp': case 'KeyW': moveForward = false; break;
+                    case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
+                    case 'ArrowDown': case 'KeyS': moveBackward = false; break;
+                    case 'ArrowRight': case 'KeyD': moveRight = false; break;
+                }
+            };
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            // 7. Generate Maze
+            generateMazeLevel();
+
+            // 8. Minimap
+            setupMinimap();
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function generateMazeLevel() {
+            // DFS Maze Generation
+            mazeGrid = [];
+            for (let y = 0; y < MAZE_SIZE; y++) {
+                let row = [];
+                for (let x = 0; x < MAZE_SIZE; x++) row.push(1);
+                mazeGrid.push(row);
+            }
+
+            const directions = [
+                { x: 0, y: -2 }, { x: 2, y: 0 }, { x: 0, y: 2 }, { x: -2, y: 0 }
+            ];
+
+            function shuffle(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+            }
+
+            const stack = [{ x: 1, y: 1 }];
+            mazeGrid[1][1] = 0;
+
+            while (stack.length > 0) {
+                const current = stack[stack.length - 1];
+                const validNeighbors = [];
+                shuffle(directions);
+
+                for (let dir of directions) {
+                    const nx = current.x + dir.x;
+                    const ny = current.y + dir.y;
+                    if (nx > 0 && nx < MAZE_SIZE - 1 && ny > 0 && ny < MAZE_SIZE - 1) {
+                        if (mazeGrid[ny][nx] === 1) {
+                            validNeighbors.push({ x: nx, y: ny, dx: dir.x / 2, dy: dir.y / 2 });
+                        }
+                    }
+                }
+
+                if (validNeighbors.length > 0) {
+                    const next = validNeighbors[0];
+                    mazeGrid[current.y + next.dy][current.x + next.dx] = 0;
+                    mazeGrid[next.y][next.x] = 0;
+                    stack.push({ x: next.x, y: next.y });
+                } else {
+                    stack.pop();
+                }
+            }
+
+            // Ensure End is reachable and open
+            let endX = MAZE_SIZE - 2;
+            let endY = MAZE_SIZE - 2;
+            mazeGrid[1][1] = 0;
+            mazeGrid[endY][endX] = 0;
+            endPos.set(endX, endY);
+
+            buildMazeGeometry();
+        }
+
+        function buildMazeGeometry() {
+            // Remove old maze meshes if any (filter by name if needed, here we recreate scene mostly)
+            // Ideally clear scene but we have lights/camera. Remove meshes manually:
+            scene.children.forEach(child => {
+                if (child.userData.isMazePart) scene.remove(child);
+            });
+
+            // 1. Walls - Green like the reference
+            const wallGeometry = new THREE.BoxGeometry(MAZE_SCALE, WALL_HEIGHT, MAZE_SCALE);
+            const wallMaterial = new THREE.MeshLambertMaterial({ color: 0x4DBD33 }); // Bright Green
+
+            let wallCount = 0;
+            for (let y = 0; y < MAZE_SIZE; y++) for (let x = 0; x < MAZE_SIZE; x++) if (mazeGrid[y][x] === 1) wallCount++;
+
+            const instancedMesh = new THREE.InstancedMesh(wallGeometry, wallMaterial, wallCount);
+            instancedMesh.castShadow = true;
+            instancedMesh.receiveShadow = true;
+            instancedMesh.userData.isMazePart = true;
+
+            let i = 0;
+            const dummy = new THREE.Object3D();
+
+            for (let y = 0; y < MAZE_SIZE; y++) {
+                for (let x = 0; x < MAZE_SIZE; x++) {
+                    if (mazeGrid[y][x] === 1) {
+                        const posX = x * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+                        const posZ = y * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+
+                        dummy.position.set(posX, WALL_HEIGHT / 2, posZ);
+                        dummy.updateMatrix();
+                        instancedMesh.setMatrixAt(i++, dummy.matrix);
+                    }
+                }
+            }
+            scene.add(instancedMesh);
+
+            // 2. Floor - White
+            const floorGeo = new THREE.PlaneGeometry(MAZE_SIZE * MAZE_SCALE, MAZE_SIZE * MAZE_SCALE);
+            const floorMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            floor.userData.isMazePart = true;
+            scene.add(floor);
+
+            // 3. Goal - Castle Construction
+            const castleGroup = new THREE.Group();
+            castleGroup.userData.isGoal = true;
+
+            const towerGeo = new THREE.CylinderGeometry(1.5, 1.5, 8, 8);
+            const towerMat = new THREE.MeshLambertMaterial({ color: 0x6E85B2 }); // Blueish stone
+            const roofGeo = new THREE.ConeGeometry(2, 4, 8);
+            const roofMat = new THREE.MeshLambertMaterial({ color: 0xB22222 }); // Red roof
+
+            // 3 Towers
+            const offsets = [{ x: 0, z: -2 }, { x: -2, z: 2 }, { x: 2, z: 2 }];
+            offsets.forEach(off => {
+                const t = new THREE.Mesh(towerGeo, towerMat);
+                t.position.set(off.x, 4, off.z);
+                t.castShadow = true;
+
+                const r = new THREE.Mesh(roofGeo, roofMat);
+                r.position.set(off.x, 9, off.z);
+
+                castleGroup.add(t);
+                castleGroup.add(r);
+            });
+
+            // Flag
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 6), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+            pole.position.set(0, 9, -2);
+            castleGroup.add(pole);
+            const flag = new THREE.Mesh(new THREE.BoxGeometry(2, 1.5, 0.1), new THREE.MeshStandardMaterial({ color: 0xFFD700 }));
+            flag.position.set(1, 11, -2);
+            castleGroup.add(flag);
+
+            const gX = endPos.x * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+            const gZ = endPos.y * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+            castleGroup.position.set(gX, 0, gZ);
+            scene.add(castleGroup);
+
+            // 4. Start Position
+            const sX = 1 * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+            const sZ = 1 * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+            camera.position.set(sX, PLAYER_HEIGHT, sZ);
+
+            // Put a "Dragon" egg or something at start just for visuals? 
+            // Maybe not needed if we are the dragon.
+        }
+
+        function setupMinimap() {
+            const aspect = 1;
+            const viewSize = MAZE_SIZE * MAZE_SCALE + 20;
+            mapCamera = new THREE.OrthographicCamera(
+                -viewSize / 2, viewSize / 2,
+                viewSize / 2, -viewSize / 2,
+                1, 1000
+            );
+            mapCamera.position.set(0, 100, 0);
+            mapCamera.lookAt(0, 0, 0);
+            mapCamera.rotation.z = Math.PI; // Match orientation
+        }
+
+        function resetGame() {
+            generateMazeLevel(); // New Maze on reset? Or just reset pos? Let's generate new.
+            const sX = 1 * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+            const sZ = 1 * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+            camera.position.set(sX, PLAYER_HEIGHT, sZ);
+            gameActive = true;
+            document.getElementById('win-screen').classList.add('hidden');
+        }
+
+        function checkCollision(nextPos) {
+            const playerBox = new THREE.Box2(
+                new THREE.Vector2(nextPos.x - PLAYER_RADIUS, nextPos.z - PLAYER_RADIUS),
+                new THREE.Vector2(nextPos.x + PLAYER_RADIUS, nextPos.z + PLAYER_RADIUS)
+            );
+
+            // Calculate grid range to check
+            const halfSize = (MAZE_SIZE * MAZE_SCALE) / 2;
+            const gridX = Math.floor((nextPos.x + halfSize + MAZE_SCALE / 2) / MAZE_SCALE);
+            const gridZ = Math.floor((nextPos.z + halfSize + MAZE_SCALE / 2) / MAZE_SCALE);
+
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const cx = gridX + dx;
+                    const cy = gridZ + dy;
+
+                    if (cx >= 0 && cx < MAZE_SIZE && cy >= 0 && cy < MAZE_SIZE) {
+                        if (mazeGrid[cy][cx] === 1) {
+                            const wx = cx * MAZE_SCALE - halfSize;
+                            const wz = cy * MAZE_SCALE - halfSize;
+                            const wallBox = new THREE.Box2(
+                                new THREE.Vector2(wx - MAZE_SCALE / 2, wz - MAZE_SCALE / 2),
+                                new THREE.Vector2(wx + MAZE_SCALE / 2, wz + MAZE_SCALE / 2)
+                            );
+
+                            if (playerBox.intersectsBox(wallBox)) return true;
+                        }
+                    }
+                }
+            }
+
+            // Check boundaries
+            const limit = halfSize - 1; // Slight buffer
+            if (nextPos.x < -limit || nextPos.x > limit || nextPos.z < -limit || nextPos.z > limit) return true;
+
+            return false;
+        }
+
+        function checkWin() {
+            const gX = endPos.x * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+            const gZ = endPos.y * MAZE_SCALE - (MAZE_SIZE * MAZE_SCALE) / 2;
+            const dist = new THREE.Vector2(camera.position.x, camera.position.z).distanceTo(new THREE.Vector2(gX, gZ));
+
+            if (dist < 6 && gameActive) {
+                gameActive = false;
+                controls.unlock(); // Ensure mouse brings up menu
+                document.getElementById('win-screen').classList.remove('hidden');
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (controls.isLocked) {
+                const time = performance.now();
+                const delta = (time - prevTime) / 1000;
+
+                // Movement Logic
+                const forwardDir = new THREE.Vector3();
+                camera.getWorldDirection(forwardDir);
+                forwardDir.y = 0;
+                forwardDir.normalize();
+
+                const rightDir = new THREE.Vector3();
+                rightDir.crossVectors(forwardDir, camera.up).normalize();
+
+                const moveVec = new THREE.Vector3();
+                if (moveForward) moveVec.add(forwardDir);
+                if (moveBackward) moveVec.sub(forwardDir);
+                if (moveRight) moveVec.add(rightDir);
+                if (moveLeft) moveVec.sub(rightDir);
+                moveVec.normalize();
+
+                if (moveVec.lengthSq() > 0) {
+                    const distance = MOVEMENT_SPEED * delta;
+                    const nextPos = camera.position.clone().addScaledVector(moveVec, distance);
+
+                    // Simple sliding collision
+                    let allowX = !checkCollision(new THREE.Vector3(nextPos.x, camera.position.y, camera.position.z));
+                    let allowZ = !checkCollision(new THREE.Vector3(camera.position.x, camera.position.y, nextPos.z));
+
+                    if (allowX) camera.position.x = nextPos.x;
+                    if (allowZ) camera.position.z = nextPos.z;
+
+                    checkWin();
+                }
+
+                prevTime = time;
+            } else {
+                prevTime = performance.now(); // Prevent large delta jumps
+            }
+
+            render();
+        }
+
+        function render() {
+            // Main View
+            renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+            renderer.setScissor(0, 0, window.innerWidth, window.innerHeight);
+            renderer.setScissorTest(true);
+            renderer.render(scene, camera);
+
+            // Minimap
+            const size = 200;
+            const pad = 20;
+            renderer.setViewport(pad, window.innerHeight - size - pad, size, size);
+            renderer.setScissor(pad, window.innerHeight - size - pad, size, size);
+            renderer.setScissorTest(true);
+
+            // Render looking down
+            // To make minimap clear, maybe hide ceiling/fog? No fog in minimap?
+            const oldFog = scene.fog;
+            scene.fog = null; // Clear fog for map
+
+            // Create a Player Marker for minimap if not exists
+            let playerMarker = scene.getObjectByName("minimapMarker");
+            if (!playerMarker) {
+                playerMarker = new THREE.Mesh(
+                    new THREE.CircleGeometry(4, 16),
+                    new THREE.MeshBasicMaterial({ color: 0xFF0000 })
+                );
+                playerMarker.rotation.x = -Math.PI / 2;
+                playerMarker.name = "minimapMarker";
+                scene.add(playerMarker);
+            }
+
+            playerMarker.position.set(camera.position.x, WALL_HEIGHT + 2, camera.position.z);
+            playerMarker.visible = true; // Only visible in minimap theoretically? No, it's in scene.
+            // But main camera won't see it if it's above? Or we can use layers.
+            // Simple hack: It's above head, so player won't see it in FPS properly unless looking up.
+
+            renderer.render(scene, mapCamera);
+
+            playerMarker.visible = false; // Hide for next main render pass (not perfect sync but works for single thread loops usually if reset)
+            // Actually, next loop calls render main first. So hiding it here means it's hidden for next Main View.
+            // But we need to UNHIDE it before minimap render next frame?
+            // Better:
+            // 1. Scene background color for map?
+            const oldBg = scene.background;
+            scene.background = new THREE.Color(0xEEEEEE);
+
+            // 2. Render Map
+            // renderer.render(scene, mapCamera); (Already done above) Wait, I haven't done it yet.
+
+            // Correct order:
+            // ... setup map state ...
+            playerMarker.visible = true;
+            renderer.render(scene, mapCamera);
+            playerMarker.visible = false;
+
+            // Restore state
+            scene.fog = oldFog;
+            scene.background = oldBg;
+        }
+
+    </script>
+</body>
+
+</html>
