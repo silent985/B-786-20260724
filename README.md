@@ -12,22 +12,22 @@
 
 ## 🚀 如何运行
 
-### 方法 1：直接打开（最简单）
-直接双击文件夹中的 `index.html` 文件，使用默认浏览器（Chrome, Edge, Firefox 等）打开即可。
+### 方法 1：本地服务器（推荐）
+为了获得最佳性能并避免因浏览器安全策略导致的 ES Module 加载问题，建议使用本地服务器运行：
 
-### 方法 2：本地服务器（推荐）
-为了获得最佳性能并避免因浏览器安全策略导致的资源加载问题，建议使用本地服务器运行：
-
-1. 在当前文件夹打开终端（Terminal/CMD）。
-2. 运行本地服务器（例如使用 Python 或 Node.js）：
+1. 在当前文件夹打开终端。
+2. 运行本地服务器：
    ```bash
    # 如果安装了 Python 3
-   python -m http.server
-   
-   # or 如果安装了 Node.js (npx)
-   npx http-server .
+   python -m http.server 8080
+
+   # 或如果安装了 Node.js (npx)
+   npx http-server . -p 8080 -c-1
    ```
-3. 在浏览器中访问 `http://localhost:8080`（或终端显示的端口）。
+3. 在浏览器中访问 `http://localhost:8080`。
+
+### 方法 2：直接打开
+直接双击 `index.html` 文件使用浏览器打开，但部分浏览器可能因 CORS 策略阻止 ES Module 加载。
 
 ## 🕹️ 操作说明
 
@@ -40,11 +40,59 @@
 | **鼠标移动** | 调整视角 |
 | **ESC** | 暂停 / 释放鼠标 |
 
+## 📁 项目结构
+
+```
+Charmander/
+├── index.html              # 入口 HTML，仅包含 DOM 结构和 import map
+├── package.json            # 项目元信息与测试脚本
+├── styles/
+│   └── main.css            # 全部样式（UI、覆盖层、按钮、准星等）
+├── src/
+│   ├── config.js           # 游戏常量配置（尺寸、速度、颜色等）
+│   ├── maze.js             # 迷宫生成（DFS 算法）与连通性检测（纯逻辑）
+│   ├── coordinates.js      # 网格坐标 ↔ 世界坐标转换（纯逻辑）
+│   ├── collision.js        # 碰撞检测与胜利判定（纯逻辑）
+│   ├── renderer.js         # Three.js 场景、灯光、迷宫几何体、小地图渲染
+│   ├── player.js           # 键盘输入监听、移动向量计算
+│   ├── ui.js               # 开始/胜利界面状态管理
+│   ├── game.js             # 游戏主类，编排各模块的生命周期
+│   └── main.js             # 入口文件，实例化并启动游戏
+└── tests/
+    ├── maze.test.js        # 迷宫生成与连通性测试
+    ├── coordinates.test.js # 坐标转换测试
+    └── collision.test.js   # 碰撞判定与胜利检测测试
+```
+
+## 🧪 运行测试
+
+项目使用 Node.js 内置的测试运行器（`node:test`），不依赖额外框架。
+
+```bash
+npm test
+```
+
+测试覆盖范围：
+
+- **迷宫生成** (`maze.test.js`)：参数校验、网格尺寸、边界墙体、确定性（相同种子生成相同迷宫）、起点/终点可通行、多随机种子下的连通性验证、通路比例合理性。
+- **坐标转换** (`coordinates.test.js`)：网格↔世界坐标互转、整数格点往返一致性、墙包围盒计算、玩家包围盒、AABB 相交检测。
+- **碰撞检测** (`collision.test.js`)：起点可通行、墙内判定、越界判定、所有可达路径格均可通行、玩家半径与墙边缘重叠检测、胜利距离判定边界。
+
 ## 🛠️ 技术栈
 
 - **HTML5 / CSS3**
-- **JavaScript (ES6+)**
+- **JavaScript (ES6+ Modules)**
 - **[Three.js](https://threejs.org/)** - 3D 渲染引擎
+- **Node.js `node:test`** - 内置单元测试框架
+
+## 📐 架构说明
+
+代码按职责拆分为独立模块，核心原则：
+
+1. **纯逻辑层可独立测试**：`maze.js`、`coordinates.js`、`collision.js` 不依赖浏览器或 Three.js，可以在 Node.js 中直接运行测试。
+2. **渲染层隔离**：所有 Three.js 相关代码集中在 `renderer.js`，其余模块不直接依赖 Three.js 的类（除 `game.js` 的主类编排）。
+3. **状态内聚**：游戏状态封装在 `MazeGame` 类中，消除了原代码中的全局可变变量。
+4. **零重复计算**：终点世界坐标、半世界尺寸等派生值在生成迷宫时计算并缓存，避免在每帧碰撞检测中重复计算。
 
 ## 📝 许可
 本项目开源，可自由使用和学习。
