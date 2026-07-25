@@ -1,0 +1,10 @@
+{
+  "name": "3d-maze-adventure",
+  "version": "1.0.0",
+  "description": "A 3D maze exploration game built with Three.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
