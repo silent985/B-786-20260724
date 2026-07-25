@@ -1,0 +1,16 @@
+export const MAZE_SIZE = 15;
+export const MAZE_SCALE = 10;
+export const WALL_HEIGHT = 12;
+export const MOVEMENT_SPEED = 50.0;
+export const PLAYER_HEIGHT = 4.0;
+export const PLAYER_RADIUS = 2.0;
+export const WIN_DISTANCE = 6;
+export const FOG_NEAR = 20;
+export const FOG_FAR = 150;
+export const WALL_COLOR = 0x4dbd33;
+export const FLOOR_COLOR = 0xffffff;
+export const BG_COLOR = 0xffffff;
+export const AMBIENT_LIGHT_INTENSITY = 0.6;
+export const DIR_LIGHT_INTENSITY = 0.8;
+export const MINIMAP_SIZE = 200;
+export const MINIMAP_PADDING = 20;
